@@ -1,7 +1,7 @@
 mod query_parser;
 
 use std::path::PathBuf;
-use std::str;
+use std::str::{self, FromStr};
 use std::{fs, process::exit};
 
 use anyhow::Error;
@@ -52,10 +52,33 @@ enum Args {
         query: String,
 
         /// String value to place at the given spot (bool, array, etc. are TODO)
-        value_str: String, // TODO more forms
+        value: String, // TODO more forms
+
+        value_type: ValueType
     },
     //
     // TODO: append/add (name TBD)
+}
+
+#[derive(StructOpt)]
+enum ValueType {
+    String,
+    Number,
+    Bool
+}
+
+impl FromStr for ValueType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if (s == "number") {
+            return Ok(Self::Number)
+        }
+        if (s == "bool") {
+            return Ok(Self::Bool)
+        }
+        Ok(Self::String)
+    }
 }
 
 #[derive(StructOpt)]
@@ -94,8 +117,9 @@ fn main() {
         Args::Set {
             path,
             query,
-            value_str,
-        } => set(&path, &query, &value_str),
+            value,
+            value_type
+        } => set(&path, &query, &value, &value_type),
     };
     result.unwrap_or_else(|err| {
         match err.downcast::<SilentError>() {
@@ -183,7 +207,7 @@ fn print_toml_fragment(doc: &Document, tpath: &[TpathSegment]) {
     print!("{}", doc);
 }
 
-fn set(path: &PathBuf, query: &str, value_str: &str) -> Result<(), Error> {
+fn set(path: &PathBuf, query: &str, value_str: &str, value_type: &ValueType) -> Result<(), Error> {
     let tpath = parse_query_cli(query)?.0;
     let mut doc = read_parse(path)?;
 
@@ -227,10 +251,24 @@ fn set(path: &PathBuf, query: &str, value_str: &str) -> Result<(), Error> {
             }
         }
     }
-    *item = value(value_str);
+    match *value_type {
+        ValueType::String => {
+            *item = value(value_str);
+        },
+        ValueType::Number => {
+            let val: i64 = value_str.parse().unwrap();
+            *item = value(val);
+        },
+        ValueType::Bool => {
+            let val: bool = value_str.parse().unwrap();
+            *item = value(val);
+        }
+        _ => {*item = value(value_str);}
+    };
 
     // TODO actually write back
     print!("{}", doc);
+
     Ok(())
 }
 
